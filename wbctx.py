@@ -79,7 +79,7 @@ TOKEN_KEYS = ("input", "output", "cache_read", "cache_write", "reasoning")
 KEEP_TOP = ("id", "parentId", "timestamp", "type", "role", "sessionId",
             "cwd", "name", "callId", "status")
 KEEP_PROVIDER = ("messageId", "model", "requestModelId", "requestModelName",
-                 "agent", "traceId", "usage", "rawUsage")
+                 "agent", "traceId", "usage", "rawUsage", "stepSeq")
 
 TRUNC_MARK = "…[wbctx 已截断]"
 MAX_LINE_PARSE = 64 << 20
