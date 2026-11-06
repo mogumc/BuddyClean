@@ -38,7 +38,8 @@ import unicodedata
 from collections import Counter
 
 HOME = os.path.expanduser("~")
-# 回收站/台账/基线默认放在 ~/.workbuddy/.wbctx，可用环境变量挪走（测试时很方便）。
+# 回收站/台账/基线放哪，运行期再定：默认跟着实际存在的那个数据根走
+# （只装了国际版时不能硬塞到 ~/.workbuddy 里），也可用环境变量固定。
 STATE_DIR = os.environ.get("WBCTX_STATE") or os.path.join(HOME, ".workbuddy", ".wbctx")
 TRASH_DIR = os.path.join(STATE_DIR, "trash")
 # 一次运行里的所有文件放同一个时间戳目录，回收站里好找。
@@ -224,9 +225,61 @@ def discover_profiles(roots=None):
     return found
 
 
+_STATE_ANCHORED = bool(os.environ.get("WBCTX_STATE"))
+
+
+def anchor_state(profiles):
+    """把回收站/台账/基线落到实际存在的那个数据根里。
+
+    只装了国际版（~/.workbuddy-ai）的机器上，不能硬往 ~/.workbuddy 里塞，
+    否则凭空造出一个国内版目录，用户去原目录也找不到回收站。
+    """
+    global STATE_DIR, TRASH_DIR, LEDGER, BASELINE, _STATE_ANCHORED
+    if _STATE_ANCHORED or not profiles:
+        return
+    homes = [p.home for p in profiles]
+    chosen = None
+    for home in homes:
+        # 之前已经用过哪个，就继续在哪个里找回收站
+        if os.path.isdir(os.path.join(home, ".wbctx")):
+            chosen = home
+            break
+    if chosen is None:
+        preferred = os.path.join(HOME, ".workbuddy")
+        chosen = preferred if preferred in homes else homes[0]
+    STATE_DIR = os.path.join(chosen, ".wbctx")
+    TRASH_DIR = os.path.join(STATE_DIR, "trash")
+    LEDGER = os.path.join(STATE_DIR, "ledger.jsonl")
+    BASELINE = os.path.join(STATE_DIR, "baseline.json")
+    _STATE_ANCHORED = True
+
+
+def resolve(args):
+    """发现数据根，并把状态目录锚定好。所有命令都走这一条。"""
+    profiles = discover_profiles(getattr(args, "root", None))
+    anchor_state(profiles)
+    return profiles
+
+
+def no_profile_hint():
+    print("没找到任何 WorkBuddy 数据目录。查过这几处：")
+    for name in (".workbuddy", ".workbuddy-ai"):
+        path = os.path.join(HOME, name)
+        if not os.path.isdir(path):
+            state = "不存在"
+        elif not os.path.isdir(os.path.join(path, "projects")):
+            state = "存在但没有 projects 目录"
+        else:
+            state = "存在"
+        print("  %-58s %s" % (path, state))
+    print("只装国际版或只装国内版都正常；目录不在这两处时用 --root 指定。")
+
+
 def load_session_rows(profile):
     """读客户端的 sessions 表。只读：先把 db + wal 拷到临时目录再查。"""
     if not os.path.exists(profile.db):
+        print("  ! %s 下没有 workbuddy.db，判断不了哪些会话已删，"
+              "全部按「未知」处理、一个都不会清理。" % profile.home, file=sys.stderr)
         return {}
     tmp = tempfile.mkdtemp(prefix="wbctx-db-")
     try:
@@ -245,7 +298,7 @@ def load_session_rows(profile):
         con.close()
         return rows
     except sqlite3.Error as exc:
-        print("  ! 读 %s 失败（%s），该目录下所有会话按「未知」处理"
+        print("  ! 读 %s 失败（%s），该目录下所有会话按「未知」处理，不会被清理。"
               % (profile.db, exc), file=sys.stderr)
         return {}
     finally:
@@ -853,9 +906,9 @@ def confirm(prompt, assume_yes):
 # ---------------------------------------------------------------------------
 
 def cmd_report(args):
-    profiles = discover_profiles(args.root)
+    profiles = resolve(args)
     if not profiles:
-        print("没找到任何 WorkBuddy 数据目录。")
+        no_profile_hint()
         return 1
     sessions = scan_profiles(profiles)
     if args.json:
@@ -876,9 +929,9 @@ def cmd_report(args):
 
 
 def cmd_clean(args):
-    profiles = discover_profiles(args.root)
+    profiles = resolve(args)
     if not profiles:
-        print("没找到任何 WorkBuddy 数据目录。")
+        no_profile_hint()
         return 1
 
     if not args.action:
@@ -1063,13 +1116,13 @@ def compare_tokens(expected, sessions, verbose=False):
 
 
 def cmd_verify(args):
+    profiles = resolve(args)  # 先锚定，才知道基线文件在哪
     if not os.path.exists(BASELINE):
-        print("还没有基线。跑一次 clean 之后会自动记一份。")
+        print("还没有基线（%s）。跑一次 clean 之后会自动记一份。" % BASELINE)
         return 1
     with open(BASELINE, "r", encoding="utf-8") as fh:
         base = json.load(fh)
     expected = base.get("sessions", {})
-    profiles = discover_profiles(args.root)
     sessions = scan_profiles(profiles)
 
     print("基线时间：%s（执行的动作：%s）" % (base.get("when", "?"), base.get("action", "?")))
@@ -1084,8 +1137,9 @@ def cmd_verify(args):
 
 
 def cmd_trash(args):
+    resolve(args)  # 先把状态目录锚到正确的数据根上
     if not os.path.isdir(TRASH_DIR):
-        print("回收站是空的。")
+        print("回收站是空的（%s）。" % TRASH_DIR)
         return 0
     total, count = 0, 0
     for dp, _dn, fn in os.walk(TRASH_DIR):
