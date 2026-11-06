@@ -10,10 +10,11 @@ WorkBuddy的对话即使删除了依然会留在用户目录里面，如果很�
 ## 用法
 
 ```
-    python wbctx.py report                 # 只读扫描，列出全部会话
-    python wbctx.py clean                  # 折叠已删会话（交互确认）
+    python wbctx.py report                 # 只读报告现状，一个字节都不动
+    python wbctx.py plan                   # 预演清理：范围 + 能省多少，也不动
+    python wbctx.py clean                  # 折叠已删会话（交互确认后才动手）
     python wbctx.py clean --action slim    # 仅瘦身，保留对话可读
-    python wbctx.py clean --action purge   # 彻底删除（先移入回收站）
+    python wbctx.py clean --action purge   # 彻底删除（先进回收站）
     python wbctx.py verify                 # 对账：token 统计有没有断
     python wbctx.py trash --list           # 看回收站占了多少
     python wbctx.py trash --empty          # 清空回收站
