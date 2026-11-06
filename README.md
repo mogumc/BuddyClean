@@ -23,4 +23,6 @@ WorkBuddy的对话即使删除了依然会留在用户目录里面，如果很�
 
 一键生成的 不保证没问题
 
+建议Python版本 >= 3.13
+
 保留使用量删除只保证 [BuddySwtich](https://github.com/OShinTeam/BuddySwitch) 可以读取到用量
